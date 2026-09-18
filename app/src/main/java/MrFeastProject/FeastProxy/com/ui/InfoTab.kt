@@ -3,8 +3,13 @@ package MrFeastProject.FeastProxy.com.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
+import java.io.File
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -39,6 +44,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
@@ -46,15 +52,18 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -133,7 +142,7 @@ fun InfoTab(settingsStore: SettingsStore) {
     val scope = rememberCoroutineScope()
     var showHelpDialog by remember { mutableStateOf(false) }
     var showDonateDialog by remember { mutableStateOf(false) }
-    var actionsExpanded by rememberSaveable { mutableStateOf(true) }
+    var showInAppBrowser by remember { mutableStateOf(false) }
     var projectExpanded by rememberSaveable { mutableStateOf(true) }
     var isCheckingUpdates by remember { mutableStateOf(false) }
     var pendingManualRelease by remember { mutableStateOf<MrFeastProject.FeastProxy.com.AppReleaseInfo?>(null) }
@@ -204,170 +213,13 @@ fun InfoTab(settingsStore: SettingsStore) {
             )
         }
 
-            InfoHeroCard(onSupportClick = { showDonateDialog = true })
+            InfoHeroCard(onShareClick = { shareAppApk(context) })
 
             ExpandableSectionCard(
-            title = stringResource(R.string.actions),
-            itemCount = stringResource(R.string.items_count, 4),
-            expanded = actionsExpanded,
-            onToggle = { actionsExpanded = !actionsExpanded },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                InfoActionTile(
-                    title = stringResource(R.string.raise_issue),
-                    subtitle = stringResource(R.string.open_github_issue),
-                    modifier = Modifier.weight(1f),
-                    onClick = { openUrlInBrowser(context, AndroidForkIssuesUrl) },
-                    icon = {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_github),
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                )
-
-                InfoActionTile(
-                    title = stringResource(R.string.build_report),
-                    subtitle = stringResource(R.string.report_subtitle),
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        clipboard?.setPrimaryClip(ClipData.newPlainText("TgWsProxy Report", reportText))
-                        Toast.makeText(context, context.getString(R.string.report_copied), Toast.LENGTH_SHORT).show()
-                    },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                )
-            }
-
-            WideActionTile(
-                title = stringResource(R.string.help),
-                subtitle = stringResource(R.string.help_subtitle),
-                onClick = { showHelpDialog = true },
-                icon = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.HelpOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            )
-
-            WideActionTile(
-                title = stringResource(R.string.check_updates),
-                subtitle = updateStatusSubtitle,
-                onClick = {
-                    if (isCheckingUpdates) return@WideActionTile
-                    isCheckingUpdates = true
-                    scope.launch {
-                        val checkedAt = System.currentTimeMillis()
-                        val release = fetchLatestReleaseInfo(currentVersion)
-                        settingsStore.saveUpdateState(
-                            lastCheckAt = checkedAt,
-                            latestVersion = release?.versionTag ?: "",
-                            error = if (release == null) context.getString(R.string.update_check_failed_short) else ""
-                        )
-                        isCheckingUpdates = false
-
-                        if (release == null) {
-                            val message = if (updateLatestVersion.isNotBlank()) {
-                                context.getString(R.string.update_check_failed_known, updateLatestVersion)
-                            } else {
-                                context.getString(R.string.update_check_failed)
-                            }
-                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                            return@launch
-                        }
-
-                        if (isNewerVersion(currentVersion, release.versionTag)) {
-                            settingsStore.saveUpdateDialogShown(release.versionTag, checkedAt)
-                            pendingManualRelease = release
-                        } else {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.update_already_latest, release.versionTag),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Update,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            )
-        }
-
-        ExpandableSectionCard(
-            title = stringResource(R.string.about_project),
-            itemCount = stringResource(R.string.links_count, 4),
-            expanded = projectExpanded,
-            onToggle = { projectExpanded = !projectExpanded },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Code,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        ) {
-            ProjectLinkRow(
-                title = stringResource(R.string.android_author),
-                subtitle = stringResource(R.string.android_author_subtitle),
-                onClick = { openUrlInBrowser(context, DeveloperProfileUrl) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            )
-
-            ProjectLinkRow(
-                title = stringResource(R.string.android_fork_repo),
-                subtitle = stringResource(R.string.android_fork_repo_subtitle),
-                onClick = { openUrlInBrowser(context, AndroidForkRepoUrl) },
-                icon = {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_github),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            )
-
-            ProjectLinkRow(
-                title = stringResource(R.string.original_tg_ws_proxy),
-                subtitle = stringResource(R.string.original_tg_ws_proxy_subtitle),
-                onClick = { openUrlInBrowser(context, OriginalProjectUrl) },
+                title = stringResource(R.string.about_project),
+                itemCount = "3",
+                expanded = projectExpanded,
+                onToggle = { projectExpanded = !projectExpanded },
                 icon = {
                     Icon(
                         imageVector = Icons.Default.Code,
@@ -376,27 +228,61 @@ fun InfoTab(settingsStore: SettingsStore) {
                         modifier = Modifier.size(18.dp)
                     )
                 }
-            )
+            ) {
+                ProjectLinkRow(
+                    title = "Владелец: ✧ 𝑴𝒓𝑭𝒆𝒂𝒔𝒕_𝑶𝒇𝒇𝒊𝒄𝒊𝒂𝒍 ✧",
+                    subtitle = "Создатель и владелец FeastProxy",
+                    onClick = { Toast.makeText(context, "✧ 𝑴𝒓𝑭𝒆𝒂𝒔𝒕_𝑶𝒇𝒇𝒊𝒄𝒊𝒂𝒍 ✧", Toast.LENGTH_SHORT).show() },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                )
 
-            ProjectLinkRow(
-                title = stringResource(R.string.useful_material),
-                subtitle = stringResource(R.string.useful_material_subtitle),
-                onClick = { openUrlInBrowser(context, ProxyReferenceUrl) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            )
-        }
+                ProjectLinkRow(
+                    title = "Студия разработки: MrFeastProject",
+                    subtitle = "Официальная команда разработки",
+                    onClick = { Toast.makeText(context, "MrFeastProject Studio", Toast.LENGTH_SHORT).show() },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                )
+
+                ProjectLinkRow(
+                    title = "Наш сайт (открыть)",
+                    subtitle = "Наш официальный сайт",
+                    onClick = { showInAppBrowser = true },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                )
+            }
 
         Spacer(modifier = Modifier.height(4.dp))
 
         }
 
+    }
+
+    if (showInAppBrowser) {
+        InAppBrowserDialog(
+            url = "https://mrfeastproject.github.io/MrFeastProjectStudio.com/",
+            onDismiss = { showInAppBrowser = false }
+        )
     }
 
     if (showDonateDialog) {
@@ -527,7 +413,7 @@ fun InfoTab(settingsStore: SettingsStore) {
 }
 
 @Composable
-private fun InfoHeroCard(onSupportClick: () -> Unit) {
+private fun InfoHeroCard(onShareClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val isDark = colors.background.luminance() < 0.22f
     val heroBrush = remember(colors.primaryContainer, colors.secondaryContainer, colors.surfaceVariant) {
@@ -588,13 +474,13 @@ private fun InfoHeroCard(onSupportClick: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     HeroMetaPill(
-                        text = "Amurcanov Fork",
+                        text = "MrFeastProject",
                         containerColor = glassColor,
                         borderColor = glassBorder,
                         modifier = Modifier.weight(1f)
                     )
                     HeroMetaPill(
-                        text = "Flowseal Base",
+                        text = "FeastProxy VPN",
                         containerColor = colors.primary.copy(alpha = if (isDark) 0.18f else 0.10f),
                         borderColor = colors.primary.copy(alpha = if (isDark) 0.22f else 0.14f),
                         modifier = Modifier.weight(1f)
@@ -620,24 +506,24 @@ private fun InfoHeroCard(onSupportClick: () -> Unit) {
                 }
 
                 Button(
-                    onClick = onSupportClick,
+                    onClick = onShareClick,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp),
                     shape = RoundedCornerShape(22.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = supportAccent,
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Favorite,
+                        imageVector = Icons.Default.Share,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = stringResource(R.string.support_development),
+                        text = "Поделиться приложением",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )
@@ -1271,5 +1157,110 @@ private fun HelpSection(title: String, text: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             lineHeight = 20.sp
         )
+    }
+}
+
+@Composable
+fun InAppBrowserDialog(
+    url: String,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 32.dp),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "MrFeastProject",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = url,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Закрыть")
+                    }
+                }
+                HorizontalDivider()
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.loadWithOverviewMode = true
+                            settings.useWideViewPort = true
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                    return false
+                                }
+                            }
+                            loadUrl(url)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+fun shareAppApk(context: Context) {
+    try {
+        val shareText = "Я пользуюсь ускорителем Telegram (FeastProxy)-все летает! Попробуй!"
+        val sourceApk = File(context.applicationInfo.sourceDir)
+        val cacheApkDir = File(context.cacheDir, "shared_apk")
+        cacheApkDir.mkdirs()
+        val destApk = File(cacheApkDir, "FeastProxy.apk")
+        if (!destApk.exists() || destApk.length() != sourceApk.length()) {
+            sourceApk.copyTo(destApk, overwrite = true)
+        }
+
+        val apkUri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            destApk
+        )
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/vnd.android.package-archive"
+            putExtra(Intent.EXTRA_STREAM, apkUri)
+            putExtra(Intent.EXTRA_TEXT, shareText)
+            putExtra(Intent.EXTRA_SUBJECT, "FeastProxy")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(intent, "Поделиться FeastProxy").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "Я пользуюсь ускорителем Telegram (FeastProxy)-все летает! Попробуй!")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(Intent.createChooser(intent, "Поделиться FeastProxy").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
     }
 }

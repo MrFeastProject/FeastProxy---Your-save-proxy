@@ -22,6 +22,15 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+data class ProxyTrafficStats(
+    val upBytes: Double = 0.0,
+    val downBytes: Double = 0.0,
+    val totalBytes: Double = 0.0,
+    val upFormatted: String = "0 B",
+    val downFormatted: String = "0 B",
+    val totalFormatted: String = "0 B"
+)
+
 class ProxyService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -65,8 +74,8 @@ class ProxyService : Service() {
         private const val WAKELOCK_TIMEOUT_MS = 30L * 60 * 1000
         private const val WAKELOCK_REFRESH_MS = 25L * 60 * 1000
 
-        // Stats/notification update interval
-        private const val STATS_UPDATE_MS = 3_000L
+        // Stats interval (500ms as requested)
+        private const val STATS_UPDATE_MS = 500L
         private const val NOTIFICATION_MIN_UPDATE_MS = 3_000L
         private const val NATIVE_STOP_WAIT_MS = 3_000L
 
@@ -74,6 +83,19 @@ class ProxyService : Service() {
         val isRunning: StateFlow<Boolean> = _isRunning
         private val _isVerifiedRunning = MutableStateFlow(false)
         val isVerifiedRunning: StateFlow<Boolean> = _isVerifiedRunning
+
+        private val _startTimeMs = MutableStateFlow(0L)
+        val startTimeMs: StateFlow<Long> = _startTimeMs
+
+        private val _trafficStats = MutableStateFlow(ProxyTrafficStats())
+        val trafficStats: StateFlow<ProxyTrafficStats> = _trafficStats
+
+        fun formatBytes(bytes: Double): String {
+            if (bytes < 1024) return "%.0f B".format(bytes)
+            if (bytes < 1024 * 1024) return "%.1f KB".format(bytes / 1024)
+            if (bytes < 1024 * 1024 * 1024) return "%.1f MB".format(bytes / (1024 * 1024))
+            return "%.2f GB".format(bytes / (1024 * 1024 * 1024))
+        }
     }
 
     override fun onCreate() {
@@ -232,7 +254,17 @@ class ProxyService : Service() {
                         val downRaw = extractStat(rawStats, "down=")
                         val activeConns = extractStat(rawStats, "active=")
                         
-                        val totalBytes = parseHumanBytes(upRaw) + parseHumanBytes(downRaw)
+                        val upBytes = parseHumanBytes(upRaw)
+                        val downBytes = parseHumanBytes(downRaw)
+                        val totalBytes = upBytes + downBytes
+                        _trafficStats.value = ProxyTrafficStats(
+                            upBytes = upBytes,
+                            downBytes = downBytes,
+                            totalBytes = totalBytes,
+                            upFormatted = formatBytes(upBytes),
+                            downFormatted = formatBytes(downBytes),
+                            totalFormatted = formatBytes(totalBytes)
+                        )
                         val active = activeConns.toIntOrNull() ?: 0
                         val text = getString(R.string.notification_traffic, formatBytes(totalBytes), active)
                         updateNotification(text)
@@ -436,6 +468,12 @@ class ProxyService : Service() {
         _isRunning.value = isRunning
         if (!isRunning) {
             _isVerifiedRunning.value = false
+            _startTimeMs.value = 0L
+            _trafficStats.value = ProxyTrafficStats()
+        } else {
+            if (_startTimeMs.value == 0L) {
+                _startTimeMs.value = System.currentTimeMillis()
+            }
         }
         ProxyTileService.requestSync(this)
     }
