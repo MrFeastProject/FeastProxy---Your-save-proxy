@@ -1,0 +1,6 @@
+{
+  "name": "FeastProxy",
+  "description": "FeastProxy - MTProto proxy for Telegram with direct routing and Cloudflare mode",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
