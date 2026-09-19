@@ -37,6 +37,9 @@ class SettingsStore(private val context: Context) {
         val BIND_IP = stringPreferencesKey("bind_ip")
         val POOL_SIZE = intPreferencesKey("pool_size")
         val CFPROXY_ENABLED = booleanPreferencesKey("cfproxy_enabled")
+        val WHITELIST_BYPASS_ENABLED = booleanPreferencesKey("whitelist_bypass_enabled")
+        val CYBERGUARD_ENABLED = booleanPreferencesKey("cyberguard_enabled")
+        val AUTO_UPDATE_BACKGROUND_ENABLED = booleanPreferencesKey("auto_update_background_enabled")
         val CUSTOM_CF_DOMAIN_ENABLED = booleanPreferencesKey("custom_cf_domain_enabled")
         val CUSTOM_CF_DOMAIN = stringPreferencesKey("custom_cf_domain")
         val AUTO_START_ON_BOOT = booleanPreferencesKey("auto_start_on_boot")
@@ -59,10 +62,14 @@ class SettingsStore(private val context: Context) {
         val UPDATE_DIALOG_LAST_ACTION_AT = longPreferencesKey("update_dialog_last_action_at")
         val DIRECT_DC_DEFAULTS_MIGRATED = booleanPreferencesKey("direct_dc_defaults_migrated")
         val DIRECT_DC_DEFAULTS_V2_MIGRATED = booleanPreferencesKey("direct_dc_defaults_v2_migrated")
+        val BROADBAND_LINE_MANUAL_ENABLED = booleanPreferencesKey("broadband_line_manual_enabled")
+        val BROADBAND_SELECTED_LINE = stringPreferencesKey("broadband_selected_line")
     }
 
     val isReady: Flow<Boolean> = context.dataStore.data.map { true }
     val isExperimentalMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.IS_EXPERIMENTAL_MODE] ?: false }
+    val broadbandLineManualEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.BROADBAND_LINE_MANUAL_ENABLED] ?: false }
+    val broadbandSelectedLine: Flow<String> = context.dataStore.data.map { it[Keys.BROADBAND_SELECTED_LINE] ?: "france_1" }
     val themeMode: Flow<String> = context.dataStore.data.map { it[Keys.THEME_MODE] ?: "system" }
     val isDynamicColor: Flow<Boolean> = context.dataStore.data.map { it[Keys.IS_DYNAMIC_COLOR] ?: true }
     val themePalette: Flow<String> = context.dataStore.data.map { it[Keys.THEME_PALETTE] ?: "indigo" }
@@ -83,6 +90,9 @@ class SettingsStore(private val context: Context) {
     val bindIp: Flow<String> = context.dataStore.data.map { it[Keys.BIND_IP] ?: "127.0.0.1" }
     val poolSize: Flow<Int> = context.dataStore.data.map { it[Keys.POOL_SIZE] ?: 4 }
     val cfproxyEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.CFPROXY_ENABLED] ?: true }
+    val whitelistBypassEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.WHITELIST_BYPASS_ENABLED] ?: false }
+    val cyberGuardEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.CYBERGUARD_ENABLED] ?: true }
+    val autoUpdateBackgroundEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.AUTO_UPDATE_BACKGROUND_ENABLED] ?: true }
     val customCfDomainEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.CUSTOM_CF_DOMAIN_ENABLED] ?: false }
     val customCfDomain: Flow<String> = context.dataStore.data.map { it[Keys.CUSTOM_CF_DOMAIN] ?: "" }
     val autoStartOnBoot: Flow<Boolean> = context.dataStore.data.map { it[Keys.AUTO_START_ON_BOOT] ?: false }
@@ -214,6 +224,45 @@ class SettingsStore(private val context: Context) {
             it[Keys.CUSTOM_CF_DOMAIN_ENABLED] = customCfDomainEnabled
             it[Keys.CUSTOM_CF_DOMAIN] = customCfDomain
             it[Keys.SECRET_KEY] = secretKey
+        }
+    }
+
+    suspend fun saveWhitelistBypassEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.WHITELIST_BYPASS_ENABLED] = enabled }
+    }
+
+    suspend fun saveCyberGuardEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.CYBERGUARD_ENABLED] = enabled }
+    }
+
+    suspend fun saveAutoUpdateBackgroundEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_UPDATE_BACKGROUND_ENABLED] = enabled }
+    }
+
+    suspend fun saveBroadbandManualEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BROADBAND_LINE_MANUAL_ENABLED] = enabled }
+    }
+
+    suspend fun saveBroadbandSelectedLine(lineId: String) {
+        context.dataStore.edit { it[Keys.BROADBAND_SELECTED_LINE] = lineId }
+    }
+
+    suspend fun saveBroadbandLineConfig(
+        lineId: String,
+        dc1: String,
+        dc2: String,
+        dc3: String,
+        dc4: String,
+        dc5: String
+    ) {
+        context.dataStore.edit {
+            it[Keys.BROADBAND_SELECTED_LINE] = lineId
+            it[Keys.IS_DC_AUTO] = false
+            it[Keys.DC1] = dc1
+            it[Keys.DC2] = dc2
+            it[Keys.DC3] = dc3
+            it[Keys.DC4] = dc4
+            it[stringPreferencesKey("dc5")] = dc5
         }
     }
 }

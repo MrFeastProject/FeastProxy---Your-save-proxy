@@ -7,7 +7,13 @@ import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.os.PowerManager
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,9 +21,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.AltRoute
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Layers
@@ -26,8 +35,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -37,6 +48,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import MrFeastProject.FeastProxy.com.ProxyService
 import MrFeastProject.FeastProxy.com.SettingsStore
+import MrFeastProject.FeastProxy.com.WhitelistBypassEngine
+import MrFeastProject.FeastProxy.com.MrFeastBroadbandManager
+import MrFeastProject.FeastProxy.com.BroadbandLine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -88,10 +102,26 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedBindIp by settingsStore.bindIp.collectAsStateWithLifecycle(initialValue = "127.0.0.1")
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val savedWhitelistBypassEnabled by settingsStore.whitelistBypassEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val savedAutoUpdateBackground by settingsStore.autoUpdateBackgroundEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
     val autoStartOnBoot by settingsStore.autoStartOnBoot.collectAsStateWithLifecycle(initialValue = false)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
+    val savedBroadbandManual by settingsStore.broadbandLineManualEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val savedBroadbandLine by settingsStore.broadbandSelectedLine.collectAsStateWithLifecycle(initialValue = "france_1")
+
+    var lineLatencies by remember { mutableStateOf<Map<String, Long?>>(emptyMap()) }
+    var isTestingLatency by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val latencies = MrFeastBroadbandManager.measureAllLines()
+        lineLatencies = latencies
+        if (!savedBroadbandManual) {
+            val fastest = MrFeastBroadbandManager.findFastestLine(latencies)
+            MrFeastBroadbandManager.applyLineToSettings(fastest, settingsStore)
+        }
+    }
 
     if (!isReady) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -269,7 +299,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
                 }
                 OutlinedButton(
                     onClick = { showIpSetupDialog = true },
-                    enabled = !cfEnabled && !isRunning,
+                    enabled = !isRunning,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(24.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
@@ -278,16 +308,11 @@ fun SettingsTab(settingsStore: SettingsStore) {
                         contentColor = MaterialTheme.colorScheme.primary,
                         disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                     ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (cfEnabled || isRunning) 0.2f else 0.5f))
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isRunning) 0.2f else 0.5f))
                 ) {
                     Icon(Icons.Default.Settings, null, Modifier.size(20.dp))
-                    if (cfEnabled) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(MrFeastProject.FeastProxy.com.R.string.auto_cf_enabled), fontWeight = FontWeight.SemiBold)
-                    } else {
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(MrFeastProject.FeastProxy.com.R.string.configure_dc_addresses), fontWeight = FontWeight.SemiBold)
-                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(MrFeastProject.FeastProxy.com.R.string.configure_dc_addresses), fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -383,29 +408,74 @@ fun SettingsTab(settingsStore: SettingsStore) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        Icons.Default.Cloud, null,
+                        Icons.Default.AltRoute, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column {
+                        Text(
+                            "Обход белых списков (Beta)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Фрагментация пакетов 10-14 КБ + новое TCP соединение для каждого пакета",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = savedWhitelistBypassEnabled,
+                    onCheckedChange = {
+                        WhitelistBypassEngine.setEnabled(it)
+                        scope.launch { settingsStore.saveWhitelistBypassEnabled(it) }
+                    }
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Sync, null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
-                    Text(
-                        "CloudFlare CDN",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Column {
+                        Text(
+                            "Автообновление в фоне",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Фоновая проверка новых релизов с GitHub",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Switch(
-                    checked = cfEnabled,
-                    onCheckedChange = {
-                        cfEnabled = it
-                        isDcAuto = it
-                        scheduleSave()
-                    },
-                    enabled = !isRunning
+                    checked = savedAutoUpdateBackground,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.saveAutoUpdateBackgroundEnabled(enabled) }
+                    }
                 )
             }
 
@@ -440,10 +510,268 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     }
                 )
             }
-        }
 
-        Spacer(Modifier.height(12.dp))
+            // Выбор широкополосной линии (Broadband Line Selection)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Speed, null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column {
+                            Text(
+                                "Выбор широкополосной линии",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                if (savedBroadbandManual) "Ручной выбор магистрали серверов (DC)"
+                                else "Автоматически выбирается самый быстрый сервер по пингу",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Тумблер: по умолчанию выключен (автоматический выбор)
+                    Switch(
+                        checked = savedBroadbandManual,
+                        onCheckedChange = { manual ->
+                            scope.launch {
+                                settingsStore.saveBroadbandManualEnabled(manual)
+                                if (!manual) {
+                                    isTestingLatency = true
+                                    val latencies = MrFeastBroadbandManager.measureAllLines()
+                                    lineLatencies = latencies
+                                    val fastest = MrFeastBroadbandManager.findFastestLine(latencies)
+                                    MrFeastBroadbandManager.applyLineToSettings(fastest, settingsStore)
+                                    isTestingLatency = false
+                                    Toast.makeText(context, "Автоматически выбран: ${fastest.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
+                }
+
+                // Режим АВТО (тумблер выключен) - плашка статуса с кнопкой теста
+                if (!savedBroadbandManual) {
+                    val currentLine = MrFeastBroadbandManager.LINES.firstOrNull { it.id == savedBroadbandLine }
+                        ?: MrFeastBroadbandManager.LINES.first()
+                    val currentPing = lineLatencies[currentLine.id]
+
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(currentLine.flag, fontSize = 16.sp)
+                                    Text(
+                                        currentLine.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Text(
+                                    text = if (currentPing != null) "Пинг: $currentPing ms · Автоматический выбор активен ⚡"
+                                           else "Автоматическая линия активна ⚡",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF00C853),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            FilledTonalButton(
+                                onClick = {
+                                    scope.launch {
+                                        isTestingLatency = true
+                                        val latencies = MrFeastBroadbandManager.measureAllLines()
+                                        lineLatencies = latencies
+                                        val fastest = MrFeastBroadbandManager.findFastestLine(latencies)
+                                        MrFeastBroadbandManager.applyLineToSettings(fastest, settingsStore)
+                                        isTestingLatency = false
+                                        val pingMs = latencies[fastest.id]
+                                        val pingStr = if (pingMs != null) " ($pingMs ms)" else ""
+                                        Toast.makeText(context, "Самый быстрый: ${fastest.name}$pingStr", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                enabled = !isTestingLatency,
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                if (isTestingLatency) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.8.dp)
+                                } else {
+                                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Тест пинга", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Режим РУЧНОЙ (тумблер включен) - выворачивается список линий для выбора
+                AnimatedVisibility(
+                    visible = savedBroadbandManual,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Выберите широкополосную линию:",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        isTestingLatency = true
+                                        lineLatencies = MrFeastBroadbandManager.measureAllLines()
+                                        isTestingLatency = false
+                                    }
+                                },
+                                enabled = !isTestingLatency,
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Пинг", fontSize = 11.sp)
+                            }
+                        }
+
+                        MrFeastBroadbandManager.LINES.forEach { line ->
+                            val isSelected = (savedBroadbandLine == line.id)
+                            val ping = lineLatencies[line.id]
+
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                border = BorderStroke(
+                                    if (isSelected) 1.5.dp else 1.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        scope.launch {
+                                            MrFeastBroadbandManager.applyLineToSettings(line, settingsStore)
+                                            Toast.makeText(context, "Применена линия: ${line.name}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = {
+                                            scope.launch {
+                                                MrFeastBroadbandManager.applyLineToSettings(line, settingsStore)
+                                                Toast.makeText(context, "Применена линия: ${line.name}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(line.flag, fontSize = 15.sp)
+                                            Text(
+                                                line.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Text(
+                                            line.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    // Пинг бэдж
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = when {
+                                            ping == null -> MaterialTheme.colorScheme.surfaceVariant
+                                            ping < 80 -> Color(0xFF00C853).copy(alpha = 0.18f)
+                                            ping < 160 -> Color(0xFFFFB300).copy(alpha = 0.18f)
+                                            else -> Color(0xFFFF5252).copy(alpha = 0.18f)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = if (ping != null) "$ping ms" else "-- ms",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 10.sp
+                                            ),
+                                            color = when {
+                                                ping == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                ping < 80 -> Color(0xFF00C853)
+                                                ping < 160 -> Color(0xFFFFB300)
+                                                else -> Color(0xFFFF5252)
+                                            },
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    Spacer(Modifier.height(12.dp))
 }
 
 @Composable
@@ -519,6 +847,36 @@ private fun IpSetupDialog(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
+
+                // MrFeastProject Quick Preset Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AssistChip(
+                        onClick = {
+                            onDc2Change("149.154.167.220")
+                            onDc4Change("149.154.167.91")
+                        },
+                        label = { Text("🇫🇷 France #1", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    AssistChip(
+                        onClick = {
+                            onDc5Change("91.108.56.130")
+                        },
+                        label = { Text("🇩🇪 German #2", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    AssistChip(
+                        onClick = {
+                            onDc1Change("149.154.175.50")
+                            onDc3Change("149.154.175.100")
+                        },
+                        label = { Text("⚡ 1 GIB Server", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
 
                 @Composable
                 fun dcInput(label: String, value: String, update: (String) -> Unit) {

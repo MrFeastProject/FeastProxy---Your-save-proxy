@@ -111,8 +111,8 @@ import kotlinx.coroutines.launch
 private const val AndroidForkRepoUrl = "https://github.com/amurcanov/tg-ws-proxy-android"
 private const val AndroidForkIssuesUrl = "https://github.com/amurcanov/tg-ws-proxy-android/issues"
 private const val DeveloperProfileUrl = "https://github.com/amurcanov"
-private const val OriginalProjectUrl = "https://github.com/Flowseal/tg-ws-proxy"
-private const val ProxyReferenceUrl = "https://github.com/Flowseal/tg-ws-proxy/issues/389"
+private const val OriginalProjectUrl = "https://github.com/MrFeastProject/tg-ws-proxy"
+private const val ProxyReferenceUrl = "https://github.com/MrFeastProject/tg-ws-proxy"
 private const val AndroidAppDonateUrl = ""
 private const val OriginalIdeaDonateUrl = ""
 

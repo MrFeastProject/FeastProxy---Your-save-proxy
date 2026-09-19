@@ -59,7 +59,7 @@
     <string name="android_fork_repo">Репозиторий Android-форка</string>
     <string name="android_fork_repo_subtitle">Исходники и релизы этого приложения</string>
     <string name="original_tg_ws_proxy">Оригинальный tg-ws-proxy</string>
-    <string name="original_tg_ws_proxy_subtitle">Исходная идея и upstream от Flowseal</string>
+    <string name="original_tg_ws_proxy_subtitle">Исходная идея и upstream от MrFeastProject</string>
     <string name="useful_material">Полезный материал</string>
     <string name="useful_material_subtitle">Заметки по работе прокси от IMDelewer</string>
     <string name="update_postponed_24h">Обновление отложено на 24 часа.</string>

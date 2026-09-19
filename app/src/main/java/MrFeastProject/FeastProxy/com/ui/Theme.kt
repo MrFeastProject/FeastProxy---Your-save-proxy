@@ -189,8 +189,54 @@ private val ForestDarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF48454E),
 )
 
+// ═══ Черно-фиолетовая кибер игровая палитра ═══
+private val CyberVioletDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFC084FC), // Electric Neon Violet
+    onPrimary = Color(0xFF1E0B36),
+    primaryContainer = Color(0xFF581C87),
+    onPrimaryContainer = Color(0xFFF3E8FF),
+    secondary = Color(0xFFA855F7), // Cyber Purple
+    onSecondary = Color(0xFF18062B),
+    secondaryContainer = Color(0xFF3B0764),
+    onSecondaryContainer = Color(0xFFE9D5FF),
+    tertiary = Color(0xFF00E5FF), // Cyber Cyan accent
+    onTertiary = Color(0xFF00363D),
+    tertiaryContainer = Color(0xFF004F59),
+    onTertiaryContainer = Color(0xFFB2F5EA),
+    background = Color(0xFF090614), // Deep Cyber Obsidian Black
+    onBackground = Color(0xFFF3E8FF),
+    surface = Color(0xFF120C24), // Cyber Glass Dark Surface
+    onSurface = Color(0xFFF3E8FF),
+    surfaceVariant = Color(0xFF1F1538),
+    onSurfaceVariant = Color(0xFFD8B4FE),
+    outline = Color(0xFF9333EA),
+    outlineVariant = Color(0xFF4C1D95),
+)
+
+private val CyberVioletLightColorScheme = lightColorScheme(
+    primary = Color(0xFF7E22CE),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFF3E8FF),
+    onPrimaryContainer = Color(0xFF3B0764),
+    secondary = Color(0xFF9333EA),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFF3E8FF),
+    onSecondaryContainer = Color(0xFF3B0764),
+    tertiary = Color(0xFF0097A7),
+    onTertiary = Color(0xFFFFFFFF),
+    background = Color(0xFFFAF5FF),
+    onBackground = Color(0xFF1E0B36),
+    surface = Color(0xFFF5EEFD),
+    onSurface = Color(0xFF1E0B36),
+    surfaceVariant = Color(0xFFEDE0FB),
+    onSurfaceVariant = Color(0xFF581C87),
+    outline = Color(0xFFA855F7),
+    outlineVariant = Color(0xFFD8B4FE),
+)
+
 private fun getAppColorScheme(palette: String, isDark: Boolean): androidx.compose.material3.ColorScheme {
     return when(palette) {
+        "cyber_violet" -> if (isDark) CyberVioletDarkColorScheme else CyberVioletLightColorScheme
         "espresso" -> if (isDark) DarkColorScheme else LightColorScheme
         "forest" -> if (isDark) ForestDarkColorScheme else ForestLightColorScheme
         else -> if (isDark) IndigoDarkColorScheme else IndigoLightColorScheme

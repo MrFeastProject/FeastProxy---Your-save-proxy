@@ -230,6 +230,16 @@ fun FloatingToolbar(
                                 PaletteCircle("indigo", 0xFF5B588D, currentPalette, onPaletteChange)
                                 PaletteCircle("forest", 0xFF5F5D68, currentPalette, onPaletteChange)
                                 PaletteCircle("espresso", 0xFF6D4C41, currentPalette, onPaletteChange)
+                                PaletteCircle("cyber_violet", 0xFFA855F7, currentPalette, onPaletteChange)
+                            }
+                            if (currentPalette == "cyber_violet") {
+                                Text(
+                                    "Кибер-фиолетовая",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                         }

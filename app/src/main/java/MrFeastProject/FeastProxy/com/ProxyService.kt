@@ -21,6 +21,7 @@ import java.net.ServerSocket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 
 data class ProxyTrafficStats(
     val upBytes: Double = 0.0,
@@ -28,7 +29,12 @@ data class ProxyTrafficStats(
     val totalBytes: Double = 0.0,
     val upFormatted: String = "0 B",
     val downFormatted: String = "0 B",
-    val totalFormatted: String = "0 B"
+    val totalFormatted: String = "0 B",
+    val upSpeedFormatted: String = "0 B/s",
+    val downSpeedFormatted: String = "0 B/s",
+    val activeConnections: Int = 0,
+    val isTransferring: Boolean = false,
+    val updateTimestamp: Long = 0L
 )
 
 class ProxyService : Service() {
@@ -65,6 +71,9 @@ class ProxyService : Service() {
         const val EXTRA_CFPROXY_PRIORITY = "EXTRA_CFPROXY_PRIORITY"
         const val EXTRA_CFPROXY_DOMAIN = "EXTRA_CFPROXY_DOMAIN"
         const val EXTRA_SECRET_KEY = "EXTRA_SECRET_KEY"
+        
+        private const val PREFS_PROXY_STATE = "proxy_runtime_state"
+        private const val KEY_PERSISTED_IS_RUNNING = "is_running_persisted"
         
         private const val NOTIFICATION_ID = 101
         private const val CHANNEL_ID = "TG_WS_Proxy_Service_v4"
@@ -115,28 +124,72 @@ class ProxyService : Service() {
                 val cfPriority = intent.getBooleanExtra(EXTRA_CFPROXY_PRIORITY, true)
                 val cfDomain = intent.getStringExtra(EXTRA_CFPROXY_DOMAIN) ?: ""
                 val secretKey = intent.getStringExtra(EXTRA_SECRET_KEY) ?: ""
+                saveActiveState(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey)
                 startProxy(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey)
             }
             ACTION_STOP -> {
+                clearActiveState()
                 stopProxy()
             }
             ACTION_RESTART -> {
                 restartProxy()
             }
             null -> {
-                // Service restarted by system after being killed (START_REDELIVER_INTENT)
-                // If we had saved params, try to restart
-                if (lastPort > 0 && lastSecretKey.isNotEmpty()) {
-                    Log.w(TAG, "Service restarted by system, re-starting proxy")
+                // Service restarted by system after being killed (e.g. Sensors Off toggle, memory reclaim)
+                val prefs = getSharedPreferences(PREFS_PROXY_STATE, Context.MODE_PRIVATE)
+                val wasRunning = prefs.getBoolean(KEY_PERSISTED_IS_RUNNING, false)
+                val savedPort = prefs.getInt(EXTRA_PORT, lastPort)
+                val savedSecret = prefs.getString(EXTRA_SECRET_KEY, lastSecretKey).orEmpty()
+                if (wasRunning && savedPort > 0 && savedSecret.isNotEmpty()) {
+                    val bindIp = prefs.getString(EXTRA_BIND_IP, lastBindIp) ?: "127.0.0.1"
+                    val ips = prefs.getString(EXTRA_IPS, lastIps) ?: ""
+                    val poolSize = prefs.getInt(EXTRA_POOL_SIZE, lastPoolSize)
+                    val cfEnabled = prefs.getBoolean(EXTRA_CFPROXY_ENABLED, lastCfEnabled)
+                    val cfPriority = prefs.getBoolean(EXTRA_CFPROXY_PRIORITY, lastCfPriority)
+                    val cfDomain = prefs.getString(EXTRA_CFPROXY_DOMAIN, lastCfDomain) ?: ""
+                    Log.w(TAG, "Service recreated by Android OS (Sensors Off toggle / memory reclaim). Automatically restoring proxy!")
+                    startProxy(bindIp, savedPort, ips, poolSize, cfEnabled, cfPriority, cfDomain, savedSecret)
+                } else if (lastPort > 0 && lastSecretKey.isNotEmpty()) {
+                    Log.w(TAG, "Service restarted by system, re-starting proxy with in-memory params")
                     startProxy(lastBindIp, lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey)
                 } else {
                     stopSelf()
                 }
             }
         }
-        // START_REDELIVER_INTENT: if the system kills the service, it will restart it
-        // and re-deliver the last intent, so we don't lose the config.
-        return START_REDELIVER_INTENT
+        // START_STICKY ensures Android recreates the service if killed during developer toggles
+        return START_STICKY
+    }
+
+    private fun saveActiveState(
+        bindIp: String, port: Int, ips: String, poolSize: Int,
+        cfEnabled: Boolean, cfPriority: Boolean, cfDomain: String, secretKey: String
+    ) {
+        try {
+            val prefs = getSharedPreferences(PREFS_PROXY_STATE, Context.MODE_PRIVATE)
+            prefs.edit()
+                .putBoolean(KEY_PERSISTED_IS_RUNNING, true)
+                .putString(EXTRA_BIND_IP, bindIp)
+                .putInt(EXTRA_PORT, port)
+                .putString(EXTRA_IPS, ips)
+                .putInt(EXTRA_POOL_SIZE, poolSize)
+                .putBoolean(EXTRA_CFPROXY_ENABLED, cfEnabled)
+                .putBoolean(EXTRA_CFPROXY_PRIORITY, cfPriority)
+                .putString(EXTRA_CFPROXY_DOMAIN, cfDomain)
+                .putString(EXTRA_SECRET_KEY, secretKey)
+                .apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save active state: ${e.message}")
+        }
+    }
+
+    private fun clearActiveState() {
+        try {
+            val prefs = getSharedPreferences(PREFS_PROXY_STATE, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean(KEY_PERSISTED_IS_RUNNING, false).apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear active state: ${e.message}")
+        }
     }
 
     private fun isPortAvailable(bindIp: String, port: Int): Boolean {
@@ -206,10 +259,14 @@ class ProxyService : Service() {
                 if (result == 0) {
                     serviceScope.launch {
                         if (!stopInProgress) {
+                            val settingsStore = SettingsStore(applicationContext)
+                            val bypass = settingsStore.whitelistBypassEnabled.first()
+                            WhitelistBypassEngine.setEnabled(bypass)
+                            CyberGuardEngine.init(applicationContext)
                             updateRunningState(true)
                             _isVerifiedRunning.value = true
                             updateNotification(getString(R.string.notification_running), force = true)
-                            Log.i(TAG, "Proxy ready: listening on port $port")
+                            Log.i(TAG, "Proxy ready: listening on port $port (Bypass: $bypass)")
                         }
                     }
                 } else {
@@ -245,29 +302,58 @@ class ProxyService : Service() {
                 }
             }
 
+            var lastUpBytes = 0.0
+            var lastDownBytes = 0.0
+            var lastSpeedCalcTimeMs = System.currentTimeMillis()
+            var currentUpSpeed = 0.0
+            var currentDownSpeed = 0.0
+            var lastRawStats = ""
+
             while (isActive) {
-                delay(STATS_UPDATE_MS)
+                // Low latency check: emits immediately as information is updated
+                delay(80L)
                 if (_isRunning.value && !stopInProgress) {
                     try {
                         val rawStats = NativeProxy.getStats() ?: continue
-                        val upRaw = extractStat(rawStats, "up=")
-                        val downRaw = extractStat(rawStats, "down=")
-                        val activeConns = extractStat(rawStats, "active=")
-                        
-                        val upBytes = parseHumanBytes(upRaw)
-                        val downBytes = parseHumanBytes(downRaw)
-                        val totalBytes = upBytes + downBytes
-                        _trafficStats.value = ProxyTrafficStats(
-                            upBytes = upBytes,
-                            downBytes = downBytes,
-                            totalBytes = totalBytes,
-                            upFormatted = formatBytes(upBytes),
-                            downFormatted = formatBytes(downBytes),
-                            totalFormatted = formatBytes(totalBytes)
-                        )
-                        val active = activeConns.toIntOrNull() ?: 0
-                        val text = getString(R.string.notification_traffic, formatBytes(totalBytes), active)
-                        updateNotification(text)
+                        if (rawStats != lastRawStats) {
+                            lastRawStats = rawStats
+                            val now = System.currentTimeMillis()
+                            val upRaw = extractStat(rawStats, "up=")
+                            val downRaw = extractStat(rawStats, "down=")
+                            val activeConns = extractStat(rawStats, "active=")
+                            
+                            val upBytes = parseHumanBytes(upRaw)
+                            val downBytes = parseHumanBytes(downRaw)
+                            val totalBytes = upBytes + downBytes
+                            
+                            val dt = (now - lastSpeedCalcTimeMs) / 1000.0
+                            if (dt >= 0.25) {
+                                currentUpSpeed = maxOf(0.0, (upBytes - lastUpBytes) / dt)
+                                currentDownSpeed = maxOf(0.0, (downBytes - lastDownBytes) / dt)
+                                lastUpBytes = upBytes
+                                lastDownBytes = downBytes
+                                lastSpeedCalcTimeMs = now
+                            }
+                            
+                            val active = activeConns.toIntOrNull() ?: 0
+                            val isActivelyMoving = (currentUpSpeed > 0.0 || currentDownSpeed > 0.0 || active > 0)
+                            
+                            _trafficStats.value = ProxyTrafficStats(
+                                upBytes = upBytes,
+                                downBytes = downBytes,
+                                totalBytes = totalBytes,
+                                upFormatted = formatBytes(upBytes),
+                                downFormatted = formatBytes(downBytes),
+                                totalFormatted = formatBytes(totalBytes),
+                                upSpeedFormatted = "${formatBytes(currentUpSpeed)}/s",
+                                downSpeedFormatted = "${formatBytes(currentDownSpeed)}/s",
+                                activeConnections = active,
+                                isTransferring = isActivelyMoving,
+                                updateTimestamp = now
+                            )
+                            val text = getString(R.string.notification_traffic, formatBytes(totalBytes), active)
+                            updateNotification(text)
+                        }
                     } catch (e: Exception) {
                         Log.w(TAG, "Stats update failed", e)
                     }

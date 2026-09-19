@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import MrFeastProject.FeastProxy.com.ui.AppUpdateDialog
 import MrFeastProject.FeastProxy.com.ui.ConnectionTab
+import MrFeastProject.FeastProxy.com.ui.CyberGuardTab
 import MrFeastProject.FeastProxy.com.ui.FloatingToolbar
 import MrFeastProject.FeastProxy.com.ui.InfoTab
 import MrFeastProject.FeastProxy.com.ui.LogsTab
@@ -100,10 +102,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                try {
+                    requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Failed to launch notification permission: ${e.message}")
+                }
+            }
         }
         
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        BackgroundUpdateManager.start(this)
+        CyberGuardEngine.init(this)
 
         setContent {
             val context = LocalContext.current
@@ -187,6 +202,7 @@ fun MainContent(settingsStore: SettingsStore) {
     val navItems = listOf(
         NavItem(stringResource(R.string.nav_proxy), Icons.Default.PowerSettingsNew),
         NavItem(stringResource(R.string.settings), Icons.Default.Settings),
+        NavItem("CyberGuard", Icons.Default.Shield),
         NavItem(stringResource(R.string.nav_logs), Icons.Default.Terminal),
         NavItem(stringResource(R.string.info), Icons.Default.Info)
     )
@@ -302,8 +318,9 @@ fun MainContent(settingsStore: SettingsStore) {
                 when (page) {
                     0 -> ConnectionTab(settingsStore)
                     1 -> SettingsTab(settingsStore)
-                    2 -> LogsTab(settingsStore)
-                    3 -> InfoTab(settingsStore)
+                    2 -> CyberGuardTab(settingsStore)
+                    3 -> LogsTab(settingsStore)
+                    4 -> InfoTab(settingsStore)
                 }
             }
 

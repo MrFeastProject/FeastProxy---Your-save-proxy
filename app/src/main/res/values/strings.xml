@@ -59,7 +59,7 @@
     <string name="android_fork_repo">Android fork repository</string>
     <string name="android_fork_repo_subtitle">Source code and releases for this app</string>
     <string name="original_tg_ws_proxy">Original tg-ws-proxy</string>
-    <string name="original_tg_ws_proxy_subtitle">Original idea and upstream by Flowseal</string>
+    <string name="original_tg_ws_proxy_subtitle">Original idea and upstream by MrFeastProject</string>
     <string name="useful_material">Useful material</string>
     <string name="useful_material_subtitle">Proxy notes by IMDelewer</string>
     <string name="update_postponed_24h">Update postponed for 24 hours.</string>

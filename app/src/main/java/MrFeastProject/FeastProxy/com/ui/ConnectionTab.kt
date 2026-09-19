@@ -10,6 +10,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +35,9 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -65,7 +70,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
     // Settings
     val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
     val savedBindIp by settingsStore.bindIp.collectAsStateWithLifecycle(initialValue = "127.0.0.1")
-    val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val savedWhitelistBypassEnabled by settingsStore.whitelistBypassEnabled.collectAsStateWithLifecycle(initialValue = false)
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
 
@@ -236,7 +241,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
                     }
 
                     ProxyStatusPanel(
-                        cfEnabled = savedCfEnabled,
+                        whitelistBypassEnabled = savedWhitelistBypassEnabled,
                         poolSize = savedPoolSize,
                         port = savedPort,
                         version = currentVersion
@@ -280,7 +285,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
             }
         }
 
-        // Real-time Traffic stats updating every 0.5 seconds
+        // Real-time Traffic stats updating immediately as data arrives
         TrafficStatsBottomBar(stats = trafficStats, isRunning = isRunning)
     }
 }
@@ -395,105 +400,194 @@ private fun VpnPowerButton(
     isVerifiedRunning: Boolean,
     onClick: () -> Unit
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "power_transition")
+    val infiniteTransition = rememberInfiniteTransition(label = "cyber_power_transition")
 
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isRunning) 1.22f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_scale"
-    )
-
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = if (isRunning) 0.35f else 0f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulse_alpha"
-    )
-
-    val rotationAngle by infiniteTransition.animateFloat(
+    val outerSpinSpeed = when {
+        isStarting -> 900
+        isRunning -> 2800
+        else -> 9000
+    }
+    val outerRotationAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = LinearEasing),
+            animation = tween(outerSpinSpeed, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "spin_angle"
+        label = "outer_spin"
     )
 
+    val innerRotationAngle by infiniteTransition.animateFloat(
+        initialValue = 360f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isRunning) 1800 else 6000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "inner_spin"
+    )
+
+    val pulseScale1 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isRunning) 1.34f else 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulse_scale_1"
+    )
+
+    val pulseAlpha1 by infiniteTransition.animateFloat(
+        initialValue = if (isRunning) 0.45f else 0.12f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulse_alpha_1"
+    )
+
+    val pulseScale2 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isRunning) 1.20f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1900, delayMillis = 400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulse_scale_2"
+    )
+
+    val pulseAlpha2 by infiniteTransition.animateFloat(
+        initialValue = if (isRunning) 0.35f else 0f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1900, delayMillis = 400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulse_alpha_2"
+    )
+
+    val coreGlowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "core_glow_alpha"
+    )
+
+    val primaryColor = MaterialTheme.colorScheme.primary
     val buttonColor by animateColorAsState(
         targetValue = when {
             isVerifiedRunning -> Color(0xFF00E676)
             isRunning || isStarting -> Color(0xFFFFB300)
-            else -> MaterialTheme.colorScheme.primary
+            else -> primaryColor
         },
         animationSpec = tween(500),
         label = "power_btn_color"
     )
 
-    val glowColor by animateColorAsState(
-        targetValue = when {
-            isVerifiedRunning -> Color(0xFF00E676)
-            isRunning || isStarting -> Color(0xFFFFB300)
-            else -> Color.Transparent
-        },
-        animationSpec = tween(500),
-        label = "power_glow_color"
+    var isPressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.92f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "press_scale"
     )
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(190.dp)
-            .padding(8.dp)
+            .size(210.dp)
+            .padding(4.dp)
     ) {
+        // Dual expanding shockwave radar ripples
         if (isRunning) {
             Box(
                 modifier = Modifier
                     .size(175.dp)
-                    .scale(pulseScale)
+                    .scale(pulseScale1)
                     .clip(CircleShape)
-                    .background(glowColor.copy(alpha = pulseAlpha))
+                    .background(buttonColor.copy(alpha = pulseAlpha1))
             )
-        }
-
-        if (isStarting) {
             Box(
                 modifier = Modifier
-                    .size(166.dp)
-                    .rotate(rotationAngle)
+                    .size(175.dp)
+                    .scale(pulseScale2)
                     .clip(CircleShape)
-                    .border(
-                        BorderStroke(
-                            3.dp,
-                            Brush.sweepGradient(
-                                listOf(
-                                    Color.Transparent,
-                                    Color(0xFFFFB300),
-                                    Color(0xFFFFD54F),
-                                    Color.Transparent
-                                )
-                            )
-                        ),
-                        shape = CircleShape
-                    )
+                    .background(buttonColor.copy(alpha = pulseAlpha2))
             )
         }
 
+        // Technological HUD Canvas (Telemetry brackets, rotating orbital ticks)
+        Canvas(
+            modifier = Modifier
+                .size(196.dp)
+                .rotate(outerRotationAngle)
+        ) {
+            val strokeWidth = 2.5.dp.toPx()
+            val radius = (size.minDimension - strokeWidth) / 2
+            val dashEffect = PathEffect.dashPathEffect(floatArrayOf(16f, 14f), 0f)
+
+            // Outer segmented cyber HUD ring
+            drawCircle(
+                color = buttonColor.copy(alpha = if (isRunning) 0.5f else 0.22f),
+                radius = radius,
+                style = Stroke(
+                    width = strokeWidth,
+                    pathEffect = dashEffect,
+                    cap = StrokeCap.Round
+                )
+            )
+
+            // 4 Cardinal energy nodes (HUD crosshair points)
+            val nodeRadius = 3.5.dp.toPx()
+            for (i in 0..3) {
+                val angleRad = (i * 90.0) * (Math.PI / 180.0)
+                val cx = center.x + (radius * kotlin.math.cos(angleRad)).toFloat()
+                val cy = center.y + (radius * kotlin.math.sin(angleRad)).toFloat()
+                drawCircle(
+                    color = buttonColor.copy(alpha = if (isRunning) 0.85f else 0.4f),
+                    radius = nodeRadius,
+                    center = androidx.compose.ui.geometry.Offset(cx, cy)
+                )
+            }
+        }
+
+        // Inner counter-rotating orbital scanner
+        Canvas(
+            modifier = Modifier
+                .size(172.dp)
+                .rotate(innerRotationAngle)
+        ) {
+            val strokeWidth = 1.8.dp.toPx()
+            val sweepBrush = Brush.sweepGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    buttonColor.copy(alpha = if (isRunning) 0.65f else 0.15f),
+                    buttonColor.copy(alpha = if (isRunning) 0.9f else 0.25f),
+                    Color.Transparent
+                )
+            )
+            drawArc(
+                brush = sweepBrush,
+                startAngle = 0f,
+                sweepAngle = if (isRunning) 220f else 120f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+        }
+
+        // Reactor Container Frame
         Box(
             modifier = Modifier
-                .size(150.dp)
+                .size(148.dp)
+                .scale(pressScale)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            buttonColor.copy(alpha = if (isRunning) 0.25f else 0.10f),
+                            buttonColor.copy(alpha = if (isRunning) 0.28f * coreGlowAlpha else 0.08f),
                             Color.Transparent
                         )
                     )
@@ -501,38 +595,62 @@ private fun VpnPowerButton(
                 .border(
                     BorderStroke(
                         width = if (isRunning) 3.5.dp else 2.dp,
-                        brush = if (isRunning) {
-                            Brush.linearGradient(
-                                listOf(buttonColor, buttonColor.copy(alpha = 0.5f))
+                        brush = Brush.sweepGradient(
+                            listOf(
+                                buttonColor,
+                                buttonColor.copy(alpha = 0.35f),
+                                buttonColor,
+                                buttonColor.copy(alpha = 0.65f),
+                                buttonColor
                             )
-                        } else {
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                                )
-                            )
-                        }
+                        )
                     ),
                     shape = CircleShape
                 ),
             contentAlignment = Alignment.Center
         ) {
             Surface(
-                onClick = onClick,
+                onClick = {
+                    isPressed = true
+                    onClick()
+                },
                 shape = CircleShape,
                 color = if (isRunning) {
-                    buttonColor.copy(alpha = 0.18f)
+                    buttonColor.copy(alpha = 0.16f)
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                 },
-                shadowElevation = if (isRunning) 12.dp else 4.dp,
+                shadowElevation = if (isRunning) 14.dp else 4.dp,
                 modifier = Modifier.size(118.dp)
             ) {
+                LaunchedEffect(isPressed) {
+                    if (isPressed) {
+                        delay(120)
+                        isPressed = false
+                    }
+                }
+
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.fillMaxSize()
                 ) {
+                    // Subtle glowing inner reactor core
+                    if (isRunning) {
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            buttonColor.copy(alpha = 0.30f * coreGlowAlpha),
+                                            Color.Transparent
+                                        )
+                                    )
+                                )
+                        )
+                    }
+
                     Icon(
                         imageVector = Icons.Default.PowerSettingsNew,
                         contentDescription = "Питание",
@@ -594,55 +712,129 @@ private fun TrafficStatsBottomBar(
     stats: ProxyTrafficStats,
     isRunning: Boolean
 ) {
+    val infiniteTransition = rememberInfiniteTransition(label = "trafficPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
     Surface(
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp, horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TrafficStatColumn(
-                title = "ОТПРАВЛЕНО",
-                value = stats.upFormatted,
-                icon = Icons.Default.ArrowUpward,
-                iconColor = Color(0xFF00E676),
-                modifier = Modifier.weight(1f)
-            )
+            // Live Status Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                color = if (isRunning) {
+                                    if (stats.isTransferring) Color(0xFF00E676) else Color(0xFF29B6F6)
+                                } else Color.Gray.copy(alpha = 0.5f),
+                                shape = CircleShape
+                            )
+                            .then(
+                                if (isRunning && stats.isTransferring) Modifier.scale(pulseAlpha * 0.35f + 0.85f)
+                                else Modifier
+                            )
+                    )
+                    Text(
+                        text = if (!isRunning) "МОНИТОРИНГ ТРАФИКА" else if (stats.isTransferring) "ПОТОК ДАННЫХ (LIVE)" else "ПОТОК ДАННЫХ ГОТОВ",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            letterSpacing = 0.6.sp
+                        ),
+                        color = if (isRunning && stats.isTransferring) Color(0xFF00E676) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-            Box(
-                modifier = Modifier
-                    .height(36.dp)
-                    .width(1.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-            )
+                if (stats.activeConnections > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                        border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.32f))
+                    ) {
+                        Text(
+                            text = "${stats.activeConnections} сессий",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
 
-            TrafficStatColumn(
-                title = "ВСЕГО",
-                value = stats.totalFormatted,
-                icon = Icons.Default.SwapVert,
-                iconColor = Color(0xFF29B6F6),
-                modifier = Modifier.weight(1f)
-            )
+            // Stats Columns
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TrafficStatColumn(
+                    title = "ОТПРАВЛЕНО",
+                    value = stats.upFormatted,
+                    speed = if (isRunning && stats.upSpeedFormatted != "0 B/s") "↑ ${stats.upSpeedFormatted}" else null,
+                    icon = Icons.Default.ArrowUpward,
+                    iconColor = Color(0xFF00E676),
+                    modifier = Modifier.weight(1f)
+                )
 
-            Box(
-                modifier = Modifier
-                    .height(36.dp)
-                    .width(1.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-            )
+                Box(
+                    modifier = Modifier
+                        .height(38.dp)
+                        .width(1.dp)
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
+                )
 
-            TrafficStatColumn(
-                title = "СКАЧАНО",
-                value = stats.downFormatted,
-                icon = Icons.Default.ArrowDownward,
-                iconColor = Color(0xFFAB47BC),
-                modifier = Modifier.weight(1f)
-            )
+                TrafficStatColumn(
+                    title = "ВСЕГО",
+                    value = stats.totalFormatted,
+                    speed = if (isRunning) "активен" else "выкл",
+                    icon = Icons.Default.SwapVert,
+                    iconColor = Color(0xFF29B6F6),
+                    modifier = Modifier.weight(1f)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .height(38.dp)
+                        .width(1.dp)
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
+                )
+
+                TrafficStatColumn(
+                    title = "СКАЧАНО",
+                    value = stats.downFormatted,
+                    speed = if (isRunning && stats.downSpeedFormatted != "0 B/s") "↓ ${stats.downSpeedFormatted}" else null,
+                    icon = Icons.Default.ArrowDownward,
+                    iconColor = Color(0xFFB388FF),
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
@@ -651,31 +843,39 @@ private fun TrafficStatsBottomBar(
 private fun TrafficStatColumn(
     title: String,
     value: String,
+    speed: String?,
     icon: ImageVector,
     iconColor: Color,
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(14.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .background(iconColor.copy(alpha = 0.16f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(11.dp)
+                )
+            }
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp,
-                    letterSpacing = 0.5.sp
+                    letterSpacing = 0.4.sp
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -690,12 +890,24 @@ private fun TrafficStatColumn(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1
         )
+        if (speed != null) {
+            Text(
+                text = speed,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace
+                ),
+                color = iconColor,
+                maxLines = 1
+            )
+        }
     }
 }
 
 @Composable
 private fun ProxyStatusPanel(
-    cfEnabled: Boolean,
+    whitelistBypassEnabled: Boolean,
     poolSize: Int,
     port: String,
     version: String
@@ -714,9 +926,9 @@ private fun ProxyStatusPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ProxyStatusItem(
-                text = if (cfEnabled) "CF" else stringResource(R.string.direct_mode),
+                text = if (whitelistBypassEnabled) "Bypass" else "Direct",
                 modifier = Modifier
-                    .weight(0.9f)
+                    .weight(1.0f)
                     .padding(horizontal = 6.dp, vertical = 8.dp)
             )
             ProxyStatusDivider()
